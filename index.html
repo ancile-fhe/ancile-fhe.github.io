@@ -1,0 +1,1001 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ancile</title>
+<meta name="description" content="Ancile: write a PyTorch model once, and an LLM agent retargets it to Orion, Concrete ML, or HEIR, on CKKS, TFHE, BFV, or BGV. Compiler diagnostics drive a self-healing loop.">
+<meta property="og:title" content="Ancile">
+<meta property="og:description" content="One PyTorch model. Six FHE targets. An agent that reads the compiler errors and fixes its own code.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232340C9'/%3E%3Cpath d='M9 23 16 8l7 15M11.6 18h8.8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+/* Layout: a lab instrument page. One cobalt accent on cool porcelain; dark terminal panels carry the real run logs.
+   Sections stack on a 1120px measure; the hero splits thesis | live log, then everything reads top to bottom. */
+:root {
+  --bg: #F2F3F6;
+  --surface: #FFFFFF;
+  --ink: #12151F;
+  --muted: #586074;
+  --line: #D8DCE4;
+  --accent: #2340C9;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #E2E7FB;
+  --ok: #1D7A4E;
+  --warn: #A86400;
+  --bad: #B3261E;
+  --term-bg: #0E1220;
+  --term-fg: #D6DCEC;
+  --term-dim: #7F89A3;
+  --term-ok: #5BD69B;
+  --term-bad: #FF8A80;
+  --term-key: #9DB0FF;
+  --dot: rgba(35, 64, 201, 0.10);
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --measure: 1120px;
+  --step--1: 0.84rem;
+  --step-0: 1rem;
+  --step-1: 1.2rem;
+  --step-2: 1.6rem;
+  --step-3: clamp(1.9rem, 1.4rem + 2vw, 2.6rem);
+  --step-4: clamp(2.4rem, 1.5rem + 4vw, 4.1rem);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0C0F17; --surface: #141925; --ink: #E7EAF2; --muted: #9AA3B8; --line: #252C3C;
+    --accent: #7E95FF; --accent-ink: #0C0F17; --accent-soft: #1A2247;
+    --ok: #4CC38A; --warn: #E3A23C; --bad: #F0716A;
+    --term-bg: #080B13; --term-fg: #D6DCEC; --term-dim: #7F89A3; --term-ok: #5BD69B; --term-bad: #FF8A80; --term-key: #9DB0FF;
+    --dot: rgba(126, 149, 255, 0.10);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0C0F17; --surface: #141925; --ink: #E7EAF2; --muted: #9AA3B8; --line: #252C3C;
+  --accent: #7E95FF; --accent-ink: #0C0F17; --accent-soft: #1A2247;
+  --ok: #4CC38A; --warn: #E3A23C; --bad: #F0716A;
+  --term-bg: #080B13; --term-fg: #D6DCEC; --term-dim: #7F89A3; --term-ok: #5BD69B; --term-bad: #FF8A80; --term-key: #9DB0FF;
+  --dot: rgba(126, 149, 255, 0.10);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+img, svg { max-width: 100%; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.08; letter-spacing: -0.02em; }
+h2 { font-size: var(--step-3); font-weight: 700; }
+h3 { font-size: var(--step-1); font-weight: 700; letter-spacing: -0.01em; }
+p { margin: 0; }
+code, pre, .mono { font-family: var(--font-mono); }
+.wrap { max-width: var(--measure); margin-inline: auto; padding-inline: 20px; }
+.eyebrow { font-family: var(--font-mono); font-size: var(--step--1); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lede { color: var(--muted); font-size: var(--step-1); max-width: 62ch; }
+.section { padding-block: clamp(56px, 8vw, 104px); border-top: 1px solid var(--line); }
+.section-head { display: grid; gap: 14px; margin-bottom: 40px; max-width: 760px; }
+
+/* nav */
+.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.nav .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 14px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); font-family: var(--font-display); font-weight: 800; font-size: 1.25rem; letter-spacing: -0.02em; }
+.brand-mark { width: 28px; height: 28px; flex: none; }
+.nav-links { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+.nav-links a { color: var(--muted); text-decoration: none; font-size: 0.95rem; }
+.nav-links a:hover { color: var(--ink); }
+.theme-btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 12px; font: 500 0.85rem var(--font-body); cursor: pointer; }
+@media (max-width: 760px) { .nav-links a.hide-sm { display: none; } }
+
+/* hero */
+.hero { padding-block: clamp(48px, 7vw, 96px) clamp(56px, 8vw, 96px); background-image: radial-gradient(var(--dot) 1.2px, transparent 1.3px); background-size: 22px 22px; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: clamp(32px, 5vw, 64px); align-items: center; }
+@media (max-width: 900px) { .hero-grid { grid-template-columns: minmax(0, 1fr); } }
+.hero h1 { font-size: var(--step-4); font-weight: 800; letter-spacing: -0.035em; margin-block: 18px 22px; }
+.hero h1 .accent { color: var(--accent); }
+.hero .lede { margin-bottom: 30px; }
+.cta-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 10px; font: 600 0.98rem var(--font-body); text-decoration: none; border: 1px solid transparent; cursor: pointer; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-ghost { border-color: var(--line); color: var(--ink); background: var(--surface); }
+.btn-ghost:hover { border-color: var(--accent); }
+.hero-facts { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 34px; }
+.fact { display: grid; gap: 2px; }
+.fact b { font-family: var(--font-display); font-size: 1.7rem; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.fact span { color: var(--muted); font-size: 0.88rem; }
+
+/* terminal */
+.term { background: var(--term-bg); color: var(--term-fg); border-radius: 14px; box-shadow: 0 24px 60px -24px rgba(10, 16, 40, 0.45); overflow: hidden; min-width: 0; }
+.term-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+.term-title { font: 500 0.78rem var(--font-mono); color: var(--term-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-btn { background: rgba(255,255,255,0.06); color: var(--term-fg); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 4px 10px; font: 500 0.75rem var(--font-mono); cursor: pointer; flex: none; }
+.term-btn:hover { background: rgba(255,255,255,0.12); }
+.term pre { margin: 0; padding: 16px 18px 18px; font-size: 0.78rem; line-height: 1.65; overflow-x: auto; white-space: pre; }
+.t-dim { color: var(--term-dim); } .t-ok { color: var(--term-ok); } .t-bad { color: var(--term-bad); } .t-key { color: var(--term-key); }
+.t-note { color: var(--term-dim); font-style: italic; }
+.caret { display: inline-block; width: 0.6em; height: 1.1em; background: var(--term-fg); vertical-align: -0.2em; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
+
+/* problem: three dialects */
+.dialects { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 900px) { .dialects { grid-template-columns: minmax(0, 1fr); } }
+.dialect { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: grid; grid-template-rows: auto 1fr auto; min-width: 0; }
+.dialect header { padding: 14px 16px 10px; display: grid; gap: 2px; }
+.dialect header b { font-family: var(--font-display); font-size: 1.1rem; }
+.dialect header span { color: var(--muted); font-size: 0.85rem; }
+.dialect pre { margin: 0; background: var(--term-bg); color: var(--term-fg); padding: 14px 16px; font-size: 0.74rem; line-height: 1.6; overflow-x: auto; }
+.dialect footer { padding: 12px 16px; font-size: 0.88rem; color: var(--muted); border-top: 1px solid var(--line); }
+.problem-note { margin-top: 28px; max-width: 70ch; color: var(--muted); }
+.problem-note strong { color: var(--ink); }
+
+/* loop */
+.loop { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: clamp(28px, 5vw, 56px); align-items: start; }
+@media (max-width: 900px) { .loop { grid-template-columns: minmax(0, 1fr); } }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: step; }
+.steps li { counter-increment: step; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; padding-block: 16px; border-bottom: 1px solid var(--line); }
+.steps li:first-child { padding-top: 0; }
+.steps li::before { content: counter(step, decimal-leading-zero); font: 500 0.85rem var(--font-mono); color: var(--accent); padding-top: 3px; }
+.steps b { display: block; font-family: var(--font-display); font-size: 1.08rem; margin-bottom: 2px; }
+.steps p { color: var(--muted); font-size: 0.95rem; }
+.stages { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.stages h3 { font-size: 1.05rem; }
+.stage-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.stage { font: 500 0.78rem var(--font-mono); padding: 5px 9px; border-radius: 6px; background: var(--accent-soft); color: var(--ink); }
+.stage.end { background: transparent; border: 1px dashed var(--line); color: var(--muted); }
+.stages p { color: var(--muted); font-size: 0.92rem; }
+.feedback { margin: 0; background: var(--term-bg); color: var(--term-fg); border-radius: 8px; padding: 12px 14px; font-size: 0.74rem; line-height: 1.6; overflow-x: auto; white-space: pre; }
+
+/* explorer */
+.picker { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.chip { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 8px 14px; font: 500 0.85rem var(--font-mono); cursor: pointer; display: inline-flex; gap: 8px; align-items: center; }
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.chip .dot.warn { background: var(--warn); }
+.chip[aria-pressed="true"] .dot { background: var(--accent-ink); }
+.explorer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 900px) { .explorer { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px; display: grid; gap: 18px; align-content: start; min-width: 0; }
+.panel h3 { font-size: 1.35rem; }
+.panel .sub { color: var(--muted); font-size: 0.95rem; margin-top: 4px; }
+.cmd { display: flex; align-items: center; gap: 10px; background: var(--term-bg); color: var(--term-fg); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.cmd code { font-size: 0.78rem; overflow-x: auto; white-space: nowrap; flex: 1; min-width: 0; }
+.copy { background: rgba(255,255,255,0.08); color: var(--term-fg); border: 1px solid rgba(255,255,255,0.14); border-radius: 6px; padding: 4px 9px; font: 500 0.72rem var(--font-mono); cursor: pointer; flex: none; }
+.kv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+@media (max-width: 520px) { .kv { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kv div { background: var(--surface); padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+.kv dt { font-size: 0.74rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.kv dd { margin: 0; font: 500 1.02rem var(--font-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.verdict { font-size: 0.92rem; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); }
+.verdict.ok { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.verdict.warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+.verdict b { color: var(--ok); }
+.verdict.warn b { color: var(--warn); }
+.params { display: flex; flex-wrap: wrap; gap: 6px; }
+.param { font: 400 0.76rem var(--font-mono); padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); }
+.code-panel { background: var(--term-bg); color: var(--term-fg); border-radius: 12px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; min-width: 0; }
+.code-panel pre { margin: 0; padding: 16px 18px; font-size: 0.76rem; line-height: 1.62; overflow-x: auto; }
+.blocked { margin-top: 26px; display: grid; gap: 10px; }
+.blocked h3 { font-size: 1rem; }
+.blocked ul { margin: 0; padding-left: 20px; color: var(--muted); font-size: 0.92rem; display: grid; gap: 6px; }
+.blocked code { font-size: 0.85em; color: var(--ink); }
+
+
+/* switchboard */
+.sb { display: grid; gap: 16px; }
+.sb-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+@media (max-width: 900px) { .sb-controls { grid-template-columns: minmax(0, 1fr); } }
+.sb-group { display: grid; gap: 8px; min-width: 0; }
+.sb-label { font: 500 0.74rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 8px; padding: 8px 12px; font: 500 0.86rem var(--font-mono); cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
+.seg button:hover { border-color: var(--accent); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.seg button.exp { border-style: dashed; color: var(--muted); }
+.seg button.exp[aria-pressed="true"] { color: var(--accent-ink); }
+.sb-cmd { display: flex; align-items: center; gap: 10px; background: var(--term-bg); color: var(--term-fg); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+.sb-cmd .prompt { color: var(--term-dim); font-family: var(--font-mono); }
+.sb-cmd code { flex: 1; min-width: 0; font-size: 0.82rem; overflow-x: auto; white-space: nowrap; padding-block: 2px; }
+.sb-cmd .flag { color: var(--term-key); border-radius: 4px; padding: 1px 3px; }
+.sb-cmd .flag.changed { background: rgba(157, 176, 255, 0.22); color: #FFFFFF; animation: flash 1.2s ease-out; }
+@keyframes flash { from { background: rgba(157, 176, 255, 0.6); } to { background: rgba(157, 176, 255, 0.22); } }
+.run-btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 7px 16px; font: 600 0.86rem var(--font-body); cursor: pointer; flex: none; }
+.run-btn:disabled { opacity: 0.55; cursor: default; }
+.sb-note { color: var(--muted); font-size: 0.9rem; min-height: 1.6em; }
+.sb-note b { color: var(--ink); font-weight: 600; }
+.sb-main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: stretch; }
+@media (max-width: 900px) { .sb-main { grid-template-columns: minmax(0, 1fr); } }
+.sb-term { display: grid; grid-template-rows: auto auto 1fr; grid-template-columns: minmax(0, 1fr); box-shadow: none; }
+.sb-term pre { min-height: 300px; }
+.stage-strip { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px 2px; }
+.stage-strip span { font: 500 0.72rem var(--font-mono); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); color: var(--term-dim); transition: background .2s, color .2s, border-color .2s; }
+.stage-strip span.on { background: rgba(157, 176, 255, 0.18); color: var(--term-fg); border-color: rgba(157, 176, 255, 0.45); }
+.stage-strip span.ok { background: rgba(91, 214, 155, 0.16); color: var(--term-ok); border-color: rgba(91, 214, 155, 0.4); }
+.stage-strip span.bad { background: rgba(255, 138, 128, 0.16); color: var(--term-bad); border-color: rgba(255, 138, 128, 0.45); }
+.suggest { display: flex; flex-wrap: wrap; gap: 8px; }
+.suggest button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 6px 12px; font: 500 0.8rem var(--font-mono); cursor: pointer; }
+.suggest button:hover { border-color: var(--accent); }
+.panel .err { color: var(--bad); font-weight: 600; }
+.sb-code pre { max-height: 420px; }
+
+/* results */
+.charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 900px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+.chart { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 8px; min-width: 0; }
+.chart h3 { font-size: 1.05rem; }
+.chart p { color: var(--muted); font-size: 0.88rem; }
+.chart-box { overflow-x: auto; }
+.chart svg { display: block; width: 100%; min-width: 460px; height: auto; font-family: var(--font-mono); }
+.chart svg text { fill: var(--muted); font-size: 11px; }
+.chart svg .lbl { fill: var(--ink); font-size: 11.5px; }
+.chart svg .grid { stroke: var(--line); stroke-width: 1; }
+.chart svg .limit { stroke: var(--bad); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.chart svg .limit-t { fill: var(--bad); }
+.chart svg .mark { fill: var(--accent); }
+.chart svg .mark.fail { fill: var(--bad); }
+.chart svg .bar { fill: var(--accent); }
+.chart svg .val { fill: var(--ink); font-size: 11px; }
+.table-box { overflow-x: auto; margin-top: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 0.9rem; }
+th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font: 500 0.74rem var(--font-body); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+th.num { text-align: right; }
+tbody tr:last-child td { border-bottom: 0; }
+td .tg { font-family: var(--font-mono); font-size: 0.84rem; }
+.pill { display: inline-block; font: 500 0.72rem var(--font-mono); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.pill.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.foot-note { color: var(--muted); font-size: 0.86rem; margin-top: 14px; max-width: 80ch; }
+
+/* case study */
+.case { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: clamp(24px, 4vw, 48px); align-items: start; }
+@media (max-width: 900px) { .case { grid-template-columns: minmax(0, 1fr); } }
+.case p { color: var(--muted); }
+.case p + p { margin-top: 14px; }
+.attempts { display: grid; gap: 10px; }
+.attempt { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 14px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.attempt .n { font: 500 0.8rem var(--font-mono); color: var(--muted); }
+.attempt .what { min-width: 0; }
+.attempt .what b { display: block; font-size: 0.95rem; }
+.attempt .what span { color: var(--muted); font-size: 0.86rem; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.attempt.pass { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+
+/* audiences */
+.aud { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .aud { grid-template-columns: minmax(0, 1fr); } }
+.aud article { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px; display: grid; gap: 10px; align-content: start; }
+.aud .plug { font: 500 0.78rem var(--font-mono); color: var(--accent); }
+.aud p { color: var(--muted); font-size: 0.95rem; }
+
+/* extend + quick start */
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 900px) { .two { grid-template-columns: minmax(0, 1fr); } }
+.block { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.block > p { color: var(--muted); font-size: 0.95rem; }
+.block pre { margin: 0; background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 16px 18px; font-size: 0.76rem; line-height: 1.65; overflow-x: auto; }
+.qs { display: grid; gap: 10px; counter-reset: qs; }
+.qs-step { display: grid; gap: 6px; }
+.qs-step > span { font-size: 0.9rem; color: var(--muted); }
+.qs-step > span b { color: var(--ink); font-weight: 600; }
+
+/* limits */
+.limits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 900px) { .limits { grid-template-columns: minmax(0, 1fr); } }
+.limits div { border-top: 2px solid var(--line); padding-top: 14px; display: grid; gap: 6px; align-content: start; }
+.limits b { font-family: var(--font-display); font-size: 1.02rem; }
+.limits p { color: var(--muted); font-size: 0.92rem; }
+
+footer.site { border-top: 1px solid var(--line); padding-block: 40px 56px; color: var(--muted); font-size: 0.9rem; }
+footer.site .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<nav class="nav" aria-label="Main">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Ancile home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--accent)"/><path d="M9 23 16 8l7 15M11.6 18h8.8" stroke="var(--accent-ink)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ancile
+    </a>
+    <div class="nav-links">
+      <a href="#how" class="hide-sm">How it works</a>
+      <a href="#targets">Targets</a>
+      <a href="#results" class="hide-sm">Results</a>
+      <a href="#start">Quick start</a>
+      <button class="theme-btn" id="theme-btn" type="button" aria-label="Switch color theme">Theme</button>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="eyebrow">Research prototype · Fully homomorphic encryption</div>
+      <h1>Write the model once. <span class="accent">Run it on any FHE stack.</span></h1>
+      <p class="lede">Every FHE compiler wants the model in its own dialect. Ancile gives your PyTorch model to an LLM agent, which rewrites it for the compiler you select. Ancile compiles it, runs it on encrypted data, and sends the compiler's diagnostics back to the agent until the result passes.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#targets">Explore the targets</a>
+        <a class="btn btn-ghost" href="#start">Quick start</a>
+      </div>
+      <div class="hero-facts" aria-label="Current coverage">
+        <div class="fact"><b>3</b><span>compilers</span></div>
+        <div class="fact"><b>4</b><span>FHE schemes</span></div>
+        <div class="fact"><b>6</b><span>targets, end to end</span></div>
+        <div class="fact"><b>1</b><span>PyTorch model</span></div>
+      </div>
+    </div>
+    <div class="term" aria-label="A real Ancile run log">
+      <div class="term-bar">
+        <span class="term-title">ancile run -t tasks/examples/mlp_square --agent fhe-loop --compiler heir --scheme bfv</span>
+        <button class="term-btn" id="replay" type="button">Replay</button>
+      </div>
+      <pre id="log"></pre>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<section class="section" id="problem">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">The problem</div>
+      <h2>One model. Three compilers. Three different programs.</h2>
+      <p class="lede">These three files compute the same small network on encrypted data. Each compiler needs a different rewrite, and a change of scheme or library means a new one.</p>
+    </div>
+    <div class="dialects">
+      <div class="dialect">
+        <header><b>Orion</b><span>CKKS on Lattigo · its own layer library</span></header>
+<pre><code><span class="t-key">import</span> orion.nn <span class="t-key">as</span> on
+
+<span class="t-key">class</span> MLP(on.Module):
+    <span class="t-key">def</span> __init__(self):
+        super().__init__()
+        self.flatten = on.Flatten()
+        self.fc1  = on.Linear(784, 128)
+        self.bn1  = on.BatchNorm1d(128)
+        self.act1 = on.Quad()       <span class="t-dim"># x * x</span>
+        ...</code></pre>
+        <footer>Every layer becomes an <code>orion.nn</code> layer. The CKKS depth decides the bootstraps.</footer>
+      </div>
+      <div class="dialect">
+        <header><b>Concrete ML</b><span>TFHE · quantized with Brevitas</span></header>
+<pre><code><span class="t-key">from</span> brevitas <span class="t-key">import</span> nn <span class="t-key">as</span> qnn
+
+self.quant_inp = qnn.QuantIdentity(bit_width=5)
+self.fc1 = qnn.QuantLinear(784, 128,
+           weight_bit_width=5, bias_quant=<span class="t-key">None</span>)
+self.bn1 = nn.BatchNorm1d(128)
+self.q1  = qnn.QuantIdentity(bit_width=5)
+...
+COMPILE_OPTIONS = {<span class="t-ok">"rounding_threshold_bits"</span>: 6}</code></pre>
+        <footer>The agent picks the bit widths. Each table lookup must stay under 16 bits.</footer>
+      </div>
+      <div class="dialect">
+        <header><b>HEIR</b><span>CKKS, BFV, BGV · MLIR</span></header>
+<pre><code><span class="t-key">def</span> convert(model):
+    <span class="t-dim"># HEIR cannot emit rsqrt: fold BatchNorm</span>
+    s = bn.weight / torch.sqrt(bn.running_var + eps)
+    W = fc.weight * s[:, <span class="t-key">None</span>]
+    b = (fc.bias - bn.running_mean) * s + bn.bias
+    ...
+
+<span class="t-dim"># BFV: integers only, no rescaling</span>
+INPUT_SCALE = 8
+HEIR_OPTIONS = {<span class="t-ok">"plaintext-modulus"</span>: 140737488486401}</code></pre>
+        <footer>A graph rewrite, and for BFV a full integer quantization that must fit the plaintext modulus.</footer>
+      </div>
+    </div>
+    <p class="problem-note"><strong>A developer has to learn each compiler's rules to move a workload.</strong> Ancile moves that work to an agent and checks the result the same way on every target: the same task, the same test inputs, the same accuracy metric.</p>
+  </div>
+</section>
+
+<section class="section" id="how">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">How a run works</div>
+      <h2>The compiler's error is the agent's next instruction.</h2>
+    </div>
+    <div class="loop">
+      <ol class="steps">
+        <li><div><b>Describe the task once</b><p>A plain PyTorch model, its weights, calibration inputs, and test inputs. No FHE library in the task.</p></div></li>
+        <li><div><b>Select the target</b><p><code>--compiler</code>, <code>--scheme</code>, <code>--backend</code>. Ancile rejects a combination that no backend supports, before any work starts.</p></div></li>
+        <li><div><b>The agent writes the conversion</b><p>It gets the compiler's rules and the model source, writes the solution file, and can run the check itself.</p></div></li>
+        <li><div><b>Ancile compiles, encrypts, and measures</b><p>The compiler runs in its own process or Docker container. The FHE outputs are compared with the plaintext model: MAE, precision bits, top-1 agreement, latency.</p></div></li>
+        <li><div><b>Diagnostics go back to the agent</b><p>On a failure, the agent gets the stage, the error, a hint, and the compiler's numbers. It corrects the file and tries again.</p></div></li>
+        <li><div><b>A pass is saved</b><p>The accepted solution, its metrics, and its cost go to <code>solve/&lt;task&gt;/&lt;target&gt;/&lt;agent&gt;/</code>, ready to compare across targets and agents.</p></div></li>
+      </ol>
+      <div class="stages">
+        <h3>The check stages for HEIR with BFV</h3>
+        <div class="stage-list" aria-label="Check stages">
+          <span class="stage">load</span><span class="stage">quantize</span><span class="stage">export</span><span class="stage">compile</span><span class="stage">translate</span><span class="stage">build</span><span class="stage">infer</span><span class="stage">verify</span><span class="stage end">done</span>
+        </div>
+        <p>Each compiler has its own stages. A failed check names the stage where it stopped, so the agent knows which kind of problem it has.</p>
+        <p>This is the feedback the agent got on its third attempt:</p>
+<pre class="feedback">CHECK FAILED at stage: verify.
+Error: Wrong FHE result: 40 FHE outputs differ from the
+integer model in the clear. (1) Overflow: BFV computes
+modulo t=18014398510661633 (2^54.0) ... (2) Noise: a large
+t increases the noise ...
+Hint: Compare max_abs_output_int with t/2. ... If the values
+fit, the noise is too large: use a smaller plaintext-modulus.
+Diagnostics:
+  quantized_mae: 0.0036
+  max_abs_output_int: 4.2e15</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="targets">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Interactive demo</div>
+      <h2>Switch the compiler with one flag.</h2>
+      <p class="lede">Choose a compiler, a scheme, and a backend, as on the command line. The task stays the same. Each run below is a sped-up replay of a real run on <code>mlp_square</code>: a 784-128-128-10 network with BatchNorm and square activations, 4 encrypted test inputs, on a CPU.</p>
+    </div>
+
+    <div class="sb">
+      <div class="sb-controls" id="sb-controls">
+        <div class="sb-group" role="group" aria-labelledby="g-compiler"><span class="sb-label" id="g-compiler">Compiler</span><div class="seg" data-key="compiler"></div></div>
+        <div class="sb-group" role="group" aria-labelledby="g-scheme"><span class="sb-label" id="g-scheme">Scheme</span><div class="seg" data-key="scheme"></div></div>
+        <div class="sb-group" role="group" aria-labelledby="g-backend"><span class="sb-label" id="g-backend">Backend</span><div class="seg" data-key="backend"></div></div>
+      </div>
+
+      <div class="sb-cmd">
+        <span class="prompt" aria-hidden="true">$</span>
+        <code id="sb-cmd"></code>
+        <button class="run-btn" id="sb-run" type="button">Run</button>
+        <button class="copy" id="sb-copy" type="button">Copy</button>
+      </div>
+      <p class="sb-note" id="sb-note"></p>
+
+      <div class="sb-main">
+        <div class="term sb-term">
+          <div class="term-bar"><span class="term-title" id="sb-term-title">ancile run</span><span class="term-title" id="sb-speed"></span></div>
+          <div class="stage-strip" id="sb-stages" aria-label="Check stages"></div>
+          <pre id="sb-log" aria-live="polite"></pre>
+        </div>
+        <div class="panel" id="panel" aria-live="polite"></div>
+      </div>
+      <div class="code-panel sb-code">
+        <div class="term-bar"><span class="term-title" id="code-title"></span><span class="term-title">what the agent writes for this target</span></div>
+        <pre><code id="code"></code></pre>
+      </div>
+    </div>
+
+    <div class="blocked">
+      <h3>Tested, and blocked by bugs in HEIR 2026.10.1</h3>
+      <ul>
+        <li><code>heir / bgv, bfv / lattigo</code>: <code>heir-opt</code> crashes in <code>GenerateParamBGV</code> on torch-mlir output.</li>
+        <li><code>heir / cggi / tfhe-rs</code>: the tfhe-rs emitter cannot emit the 64-bit accumulator of an integer matrix product.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="results">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Results</div>
+      <h2>The same task, measured the same way on every target.</h2>
+      <p class="lede">Reference solutions on <code>mlp_square</code>. The accuracy limit is MAE ≤ 1e-2 against the plaintext model.</p>
+    </div>
+    <div class="charts">
+      <div class="chart">
+        <h3>Error against the plaintext model</h3>
+        <p>Mean absolute error, log scale. The dashed line is the limit.</p>
+        <div class="chart-box" id="chart-mae"></div>
+      </div>
+      <div class="chart">
+        <h3>FHE latency for each sample</h3>
+        <p>Encrypted inference time in seconds, on the CPU.</p>
+        <div class="chart-box" id="chart-lat"></div>
+      </div>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead>
+          <tr><th>Target</th><th class="num">MAE</th><th class="num">Top-1</th><th class="num">Latency</th><th>Parameters</th><th>Limit</th></tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </div>
+    <p class="foot-note">CKKS on HEIR is so accurate because HEIR selected a 45-bit scale. The Orion default uses 26 bits. Concrete ML, BFV, and BGV compute on quantized integers, so their error comes from the quantization. BGV on OpenFHE accepts only a small plaintext modulus for this model, and two squarings double the bits twice, so it cannot reach 1e-2. That is a property of the scheme on this task.</p>
+  </div>
+</section>
+
+<section class="section" id="case">
+  <div class="wrap case">
+    <div>
+      <div class="eyebrow">Case study</div>
+      <h2 style="margin-block: 14px 18px;">An agent finds the limits of BFV in four checks.</h2>
+      <p>BFV computes exactly on integers modulo a plaintext modulus t, with no rescaling. The agent must quantize the model: larger scales give a smaller error, but every value must fit in t. A larger t lets larger values fit, but it adds noise.</p>
+      <p>The LLM agent (<code>fhe-loop</code>, Claude Sonnet 5.5) had only the task, the rules, and the checker's feedback. It found both limits and passed on its fourth check, for $0.30.</p>
+    </div>
+    <div class="attempts" aria-label="The four checks of the agent">
+      <div class="attempt"><span class="n">1</span><div class="what"><b>Exact, but not accurate enough</b><span>scales 16·4·4 · t = 2^30 · MAE 2.3e-2</span></div><span class="pill bad">accuracy</span></div>
+      <div class="attempt"><span class="n">2</span><div class="what"><b>Larger t, still not accurate</b><span>t = 2^41 · MAE 3.0e-2</span></div><span class="pill bad">accuracy</span></div>
+      <div class="attempt"><span class="n">3</span><div class="what"><b>Accurate in the clear, but too noisy</b><span>t = 2^54 · plaintext MAE 3.6e-3 · 40 of 40 outputs wrong</span></div><span class="pill bad">verify</span></div>
+      <div class="attempt pass"><span class="n">4</span><div class="what"><b>Passed</b><span>scales 8·48·24·24 · t = 2^47 · MAE 8.6e-3 · 1.9 s per sample</span></div><span class="pill ok">pass</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="who">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Who it is for</div>
+      <h2>Plug in one part. Compare it against all the others.</h2>
+      <p class="lede">Each extension point is separate. A new agent, compiler, backend, or task gets the same checks and the same benchmark as the parts that are already there.</p>
+    </div>
+    <div class="aud">
+      <article><span class="plug">tasks/</span><h3>FHE application developers</h3><p>Bring a PyTorch model and an accuracy limit. Run it on every target with one flag, and compare error, latency, and cost before you commit to a library.</p></article>
+      <article><span class="plug">agents/</span><h3>AI agent researchers</h3><p>A benchmark with a strict checker: the compiler accepts the code or it does not, and the error is measured. Swap in an agent with <code>--agent package.module:Class</code> and compare tokens, cost, and checks to pass.</p></article>
+      <article><span class="plug">compilers/</span><h3>Compiler researchers</h3><p>Wrap a compiler behind <code>BaseCompiler</code>: compile, run, and report diagnostics. It then runs on the shared tasks next to Orion, Concrete ML, and HEIR.</p></article>
+      <article><span class="plug">backends/</span><h3>Systems and hardware engineers</h3><p>Declare which compiler and scheme combinations a backend executes. The target flags, the error messages, and the benchmark pick it up from that list.</p></article>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="start">
+  <div class="wrap two">
+    <div class="block">
+      <div class="eyebrow">Quick start</div>
+      <h2>Run one task on three compilers.</h2>
+      <p>Ancile runs in a conda env. Concrete ML and HEIR run in Docker images, because their pinned dependencies conflict with the env.</p>
+      <div class="qs">
+        <div class="qs-step"><span><b>Set up</b></span>
+<pre><code>conda env create -f environment.yml
+conda activate ancile
+pip install -e ".[dev]"
+docker build -t ancile/concrete-ml:1.9.0 docker/concrete
+docker build -t ancile/heir:2026.10.1 docker/heir</code></pre></div>
+        <div class="qs-step"><span><b>Run</b> with the reference solutions (no LLM), then with the agent</span>
+<pre><code>ancile run -t tasks/examples/mlp_square --agent oracle --compiler orion
+ancile run -t tasks/examples/mlp_square --agent oracle --compiler concrete
+ancile run -t tasks/examples/mlp_square --agent fhe-loop --compiler heir --scheme bfv</code></pre></div>
+      </div>
+    </div>
+    <div class="block">
+      <div class="eyebrow">Extend</div>
+      <h2>A compiler is one class.</h2>
+      <p>The runner has no compiler-specific code. A compiler gives its prompt, its solution file, its error hints, and one method that compiles and runs.</p>
+<pre><code><span class="t-key">class</span> BaseCompiler(ABC):
+    <span class="t-key">def</span> name() -&gt; str
+    <span class="t-key">def</span> solution_files() -&gt; list[str]
+    <span class="t-key">def</span> prompt_file(config) -&gt; Path
+    <span class="t-key">def</span> default_target() -&gt; dict
+    <span class="t-key">def</span> hints() -&gt; list[tuple[str, str]]
+    <span class="t-key">def</span> preflight(config) -&gt; <span class="t-key">None</span>
+    <span class="t-key">def</span> compile_and_run(workspace, task, config,
+                        out_dir) -&gt; CompileResult</code></pre>
+      <p>Each run writes its history to <code>runs/&lt;id&gt;/</code>: the resolved config, the agent's trajectory, every compile log, the metrics, and a report.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="limits">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Status</div>
+      <h2>What works today, and what comes next.</h2>
+    </div>
+    <div class="limits">
+      <div><b>Works today</b><p>Six targets on the CPU, PyTorch tasks with one input and one output, an LLM agent and an oracle agent, and a benchmark with one report for each run.</p></div>
+      <div><b>Known limits</b><p>One example task. The default Orion config cannot bootstrap. The agent loop runs on the host. HEIR's torch-mlir path depends on a pinned nightly wheel.</p></div>
+      <div><b>Next</b><p>More tasks with bootstrapping and convolutions, swappable compiler passes, GPU backends, and automatic target selection from the constraints.</p></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <span>Ancile · a research prototype for agent-driven FHE compilation.</span>
+    <span>Source code: private during development.</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  // Theme toggle: system -> dark -> light -> system. Stored only as a convenience.
+  var root = document.documentElement;
+  var btn = document.getElementById("theme-btn");
+  var order = ["system", "dark", "light"];
+  function applyTheme(t) {
+    if (t === "system") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", t);
+    btn.textContent = t === "system" ? "Theme: auto" : "Theme: " + t;
+  }
+  var saved = "system";
+  try { saved = localStorage.getItem("ancile-theme") || "system"; } catch (e) {}
+  applyTheme(saved);
+  btn.addEventListener("click", function () {
+    var cur = root.getAttribute("data-theme") || "system";
+    var next = order[(order.indexOf(cur) + 1) % order.length];
+    applyTheme(next);
+    try { localStorage.setItem("ancile-theme", next); } catch (e) {}
+  });
+
+  // Hero log: the real output of one fhe-loop run on HEIR / BFV (lines condensed, nothing invented).
+  var LOG = [
+    ["t-dim", "run dir: runs/20261003-191824-mlp_square-fhe-loop"],
+    ["", "[1/5] agent fhe-loop ..."],
+    ["t-dim", "  turn 1: list_files"],
+    ["t-dim", "  turn 3: write_file heir_model.py"],
+    ["", "  turn 3: run_check (compile and FHE run) ..."],
+    ["t-bad", "    -> CHECK FAILED at stage: accuracy.       MAE 2.3e-2"],
+    ["t-dim", "  turn 6: write_file heir_model.py"],
+    ["", "  turn 6: run_check (compile and FHE run) ..."],
+    ["t-bad", "    -> CHECK FAILED at stage: accuracy.       MAE 3.0e-2"],
+    ["t-dim", "  turn 7: write_file heir_model.py"],
+    ["", "  turn 7: run_check (compile and FHE run) ..."],
+    ["t-bad", "    -> CHECK FAILED at stage: verify.         t too large: noise"],
+    ["t-dim", "  turn 8: write_file heir_model.py"],
+    ["", "  turn 8: run_check (compile and FHE run) ..."],
+    ["t-ok", "    -> CHECK PASSED."],
+    ["t-dim", "  turn 9: finish"],
+    ["", "[1/5] check ..."],
+    ["t-ok", "  stage=done passed=True mae=8.64e-03"],
+    ["t-dim", "solution: solve/examples/mlp_square/heir-bfv-openfhe-cpu/fhe-loop__claude-sonnet-5.5"],
+    ["", ""],
+    ["t-ok", "PASS.  9 LLM calls · $0.30 · 1.86 s FHE latency per sample"]
+  ];
+  var logEl = document.getElementById("log");
+  function lineHTML(l) { return '<span class="' + l[0] + '">' + l[1].replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</span>"; }
+  function fmt(v) { var e = Math.floor(Math.log10(v)); var m = v / Math.pow(10, e); return m.toFixed(1) + "e" + e; }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function renderAll() { logEl.innerHTML = LOG.map(lineHTML).join("\n"); }
+  renderAll(); // complete at rest
+  var timer = null;
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.getElementById("replay").addEventListener("click", function () {
+    if (reduce) { renderAll(); return; }
+    clearTimeout(timer);
+    var i = 0;
+    (function next() {
+      var shown = LOG.slice(0, i).map(lineHTML).join("\n");
+      logEl.innerHTML = shown + (i < LOG.length ? (i ? "\n" : "") + '<span class="caret"></span>' : "");
+      if (i++ < LOG.length) {
+        var prev = LOG[i - 2];
+        var slow = prev && prev[1].indexOf("run_check") >= 0;
+        timer = setTimeout(next, slow ? 900 : 260);
+      }
+    })();
+  });
+
+  // Targets: real numbers from the reference solutions (oracle) and the agent runs.
+  var T = [
+    { id: "orion-ckks-lattigo", compiler: "Orion", scheme: "CKKS", backend: "Lattigo", flags: "--compiler orion",
+      file: "orion_model.py", status: "ok",
+      what: "Real-number CKKS. The agent swaps every layer for an orion.nn layer and keeps the attribute names, so the original weights load.",
+      mae: 3.0e-4, top1: "100%", lat: 0.2, params: ["LogN 13", "26-bit scale", "5 levels", "0 bootstraps"],
+      agent: "fhe-loop passed on the first check, $0.02",
+      code: '<span class="t-key">import</span> orion.nn <span class="t-key">as</span> on\n\n<span class="t-key">class</span> MLP(on.Module):\n    <span class="t-key">def</span> __init__(self, num_classes=10):\n        super().__init__()\n        self.flatten = on.Flatten()\n        self.fc1  = on.Linear(784, 128)\n        self.bn1  = on.BatchNorm1d(128)\n        self.act1 = on.Quad()\n        self.fc2  = on.Linear(128, 128)\n        self.bn2  = on.BatchNorm1d(128)\n        self.act2 = on.Quad()\n        self.fc3  = on.Linear(128, num_classes)\n\n    <span class="t-key">def</span> forward(self, x):\n        x = self.flatten(x)\n        x = self.act1(self.bn1(self.fc1(x)))\n        x = self.act2(self.bn2(self.fc2(x)))\n        <span class="t-key">return</span> self.fc3(x)\n\n<span class="t-key">def</span> build_model():\n    <span class="t-key">return</span> MLP()' },
+    { id: "concrete-tfhe-concrete", compiler: "Concrete ML", scheme: "TFHE", backend: "Concrete", flags: "--compiler concrete",
+      file: "concrete_model.py", status: "ok",
+      what: "Integer TFHE with table lookups. The agent rewrites the model with Brevitas layers and selects the bit widths. A cost limit stops circuits that would take minutes per sample.",
+      mae: 4.7e-3, top1: "75%", lat: 11.4, params: ["5-bit weights", "rounding to 6 bits", "1920 PBS", "complexity 3.5e11"],
+      agent: "fhe-loop passed on the second check, $0.06",
+      code: '<span class="t-key">from</span> brevitas <span class="t-key">import</span> nn <span class="t-key">as</span> qnn\n\nBITS = 5\n\n<span class="t-key">class</span> MLP(nn.Module):\n    <span class="t-key">def</span> __init__(self, num_classes=10):\n        super().__init__()\n        self.quant_inp = quant_identity()\n        self.flatten = nn.Flatten()\n        self.fc1 = quant_linear(784, 128)\n        self.bn1 = nn.BatchNorm1d(128)\n        self.q1 = quant_identity()\n        self.act1 = Square()      <span class="t-dim"># x * x, then a quantizer</span>\n        self.fc2 = quant_linear(128, 128)\n        ...\n\nCOMPILE_OPTIONS = {<span class="t-ok">"rounding_threshold_bits"</span>: 6}' },
+    { id: "heir-ckks-openfhe", compiler: "HEIR", scheme: "CKKS", backend: "OpenFHE", flags: "--compiler heir",
+      file: "heir_model.py", status: "ok",
+      what: "PyTorch to MLIR with torch-mlir, then heir-opt to CKKS and C++ for OpenFHE. The agent folds BatchNorm, because HEIR cannot emit its rsqrt.",
+      mae: 4.7e-9, top1: "100%", lat: 3.5, params: ["depth 5", "45-bit scale", "55-bit first modulus", "8192 slots"],
+      agent: "fhe-loop passed on the first check, $0.02",
+      code: '<span class="t-key">def</span> fold_batchnorm(linear, bn):\n    scale = bn.weight / torch.sqrt(bn.running_var + bn.eps)\n    out = nn.Linear(linear.in_features, linear.out_features)\n    out.weight.data = linear.weight * scale[:, <span class="t-key">None</span>]\n    out.bias.data = (linear.bias - bn.running_mean) * scale + bn.bias\n    <span class="t-key">return</span> out\n\n<span class="t-key">class</span> FoldedMLP(nn.Module):\n    <span class="t-key">def</span> __init__(self, model):\n        super().__init__()\n        self.fc1 = fold_batchnorm(model.fc1, model.bn1)\n        self.fc2 = fold_batchnorm(model.fc2, model.bn2)\n        self.fc3 = model.fc3\n\n    <span class="t-key">def</span> forward(self, x):\n        x = self.fc1(x.flatten(1)); x = x * x\n        x = self.fc2(x); x = x * x\n        <span class="t-key">return</span> self.fc3(x)\n\nHEIR_OPTIONS = {<span class="t-ok">"min-slot-count"</span>: 1024}\n\n<span class="t-key">def</span> convert(model):\n    <span class="t-key">return</span> FoldedMLP(model)' },
+    { id: "heir-ckks-lattigo", compiler: "HEIR", scheme: "CKKS", backend: "Lattigo", flags: "--compiler heir --backend lattigo",
+      file: "heir_model.py", status: "ok",
+      what: "The same HEIR conversion, emitted as Go for Lattigo. Lattigo comes precompiled in the image, so a build takes 1.4 s.",
+      mae: 6.7e-9, top1: "100%", lat: 0.7, params: ["LogN 14", "45-bit scale", "8192 slots", "go build 1.4 s"],
+      agent: "same solution file as HEIR / CKKS / OpenFHE",
+      code: '<span class="t-dim"># The same heir_model.py as for OpenFHE.</span>\n<span class="t-dim"># Only the last steps change:</span>\n\nheir-opt ... --torch-linalg-to-ckks \\\n         --scheme-to-lattigo model.mlir\nheir-translate --emit-lattigo --package-name=main\ngo build .        <span class="t-dim"># Lattigo v6.1.0, offline</span>\n\n<span class="t-dim">// generated API, called by the Ancile driver</span>\nevaluator, params, ecd, enc, dec := Model__configure()\nct := Model__encrypt__arg0(evaluator, params, ecd, enc, x)\nres := Model(evaluator, params, ecd, ct, zeros)\ny := Model__decrypt__result0(evaluator, params, ecd, dec, res)' },
+    { id: "heir-bfv-openfhe", compiler: "HEIR", scheme: "BFV", backend: "OpenFHE", flags: "--compiler heir --scheme bfv",
+      file: "heir_model.py", status: "ok",
+      what: "Exact integer arithmetic modulo a plaintext modulus t, with no rescaling. The agent quantizes the model, and Ancile checks that the FHE result equals the integer model in the clear.",
+      mae: 7.9e-3, top1: "75%", lat: 1.9, params: ["t = 2^47 prime", "scales 4·64·32·32", "32768 slots", "exact: 0 mismatches"],
+      agent: "fhe-loop passed on the fourth check, $0.30",
+      code: 'INPUT_SCALE = 4\nS1, S2, S3 = 64, 32, 32\nOUTPUT_SCALE = float(((INPUT_SCALE * S1) ** 2 * S2) ** 2 * S3)\n\nHEIR_OPTIONS = {<span class="t-ok">"plaintext-modulus"</span>: 140737488486401}\n\n<span class="t-key">class</span> IntMLP(nn.Module):\n    <span class="t-key">def</span> __init__(self, model):\n        super().__init__()\n        w1, b1 = fold_batchnorm(model.fc1, model.bn1)\n        s = INPUT_SCALE * S1\n        self.register_buffer(<span class="t-ok">"w1"</span>, to_int(w1, S1))\n        self.register_buffer(<span class="t-ok">"b1"</span>, to_int(b1, s))\n        ...\n\n    <span class="t-key">def</span> forward(self, x):          <span class="t-dim"># int64 in, int64 out</span>\n        x = x.flatten(1)\n        x = x @ self.w1.T + self.b1; x = x * x\n        x = x @ self.w2.T + self.b2; x = x * x\n        <span class="t-key">return</span> x @ self.w3.T + self.b3' },
+    { id: "heir-bgv-openfhe", compiler: "HEIR", scheme: "BGV", backend: "OpenFHE", flags: "--compiler heir --scheme bgv",
+      file: "heir_model.py", status: "warn",
+      what: "Exact integers like BFV, but OpenFHE accepts only a small plaintext modulus for this model. The values must fit in 17 bits, so the quantization is coarse.",
+      mae: 2.3e-2, top1: "50%", lat: 2.8, params: ["t = 65537", "scales 1·8·2·4", "16384 slots", "exact: 0 mismatches"],
+      agent: "passes only with --set constraints.max_mae=5e-2",
+      code: '<span class="t-dim"># Same integer model as BFV, with a small t.</span>\n<span class="t-dim"># With t near 2^30, OpenFHE cannot make BGV</span>\n<span class="t-dim"># parameters: moduli would exceed 60 bits.</span>\n\nINPUT_SCALE = 1\nS1, S2, S3 = 8, 2, 4\n\nHEIR_OPTIONS = {<span class="t-ok">"plaintext-modulus"</span>: 65537}' }
+  ];
+  // Switchboard: real check stages, real run logs (condensed), real error texts.
+  var STAGES = {
+    orion: ["load", "equivalence", "layers", "fit", "compile", "encrypt", "infer", "done"],
+    concrete: ["load", "equivalence", "layers", "calibrate", "compile", "keygen", "infer", "done"],
+    heirFloat: ["load", "equivalence", "export", "compile", "translate", "build", "infer", "done"],
+    heirInt: ["load", "quantize", "export", "compile", "translate", "build", "infer", "verify", "done"]
+  };
+  // Each run: log lines. A line with check: runs the stage strip and stops at the failed stage (or passes).
+  var RUNS = {
+    "orion-ckks-lattigo": { agent: "fhe-loop", stages: STAGES.orion, real: "about 5 s per check", lines: [
+      ["", "[1/5] agent fhe-loop ..."], ["t-dim", "  turn 1: write_file orion_model.py"],
+      ["", "  turn 1: run_check ...", { check: null }], ["t-ok", "    -> CHECK PASSED."], ["t-dim", "  turn 2: finish"],
+      ["", "[1/5] check ..."], ["t-ok", "  stage=done passed=True mae=3.00e-04"], ["", ""],
+      ["t-ok", "PASS.  2 LLM calls · $0.017"]] },
+    "concrete-tfhe-concrete": { agent: "fhe-loop", stages: STAGES.concrete, real: "about 1 min per check (FHE)", lines: [
+      ["", "[1/5] agent fhe-loop ..."], ["t-dim", "  turn 1: list_files"], ["t-dim", "  turn 2: write_file concrete_model.py"],
+      ["", "  turn 2: run_check ...", { check: "compile" }],
+      ["t-bad", "    -> CHECK FAILED at stage: compile."], ["t-bad", "       Circuit complexity 1.26e+13 is more than the limit 2.00e+12"],
+      ["t-dim", "  turn 3: write_file concrete_model.py      # adds rounding_threshold_bits: 6"],
+      ["", "  turn 3: run_check ...", { check: null }], ["t-ok", "    -> CHECK PASSED."], ["t-dim", "  turn 4: finish"],
+      ["", "[1/5] check ..."], ["t-ok", "  stage=done passed=True mae=4.99e-03"], ["", ""],
+      ["t-ok", "PASS.  4 LLM calls · $0.058 · 11.7 s FHE latency per sample"]] },
+    "heir-ckks-openfhe": { agent: "fhe-loop", stages: STAGES.heirFloat, real: "about 20 s per check", lines: [
+      ["", "[1/5] agent fhe-loop ..."], ["t-dim", "  turn 1: write_file heir_model.py          # folds BatchNorm"],
+      ["", "  turn 1: run_check ...", { check: null }], ["t-ok", "    -> CHECK PASSED."], ["t-dim", "  turn 2: finish"],
+      ["", "[1/5] check ..."], ["t-ok", "  stage=done passed=True mae=4.76e-09"], ["", ""],
+      ["t-ok", "PASS.  2 LLM calls · $0.019 · 3.46 s FHE latency per sample"]] },
+    "heir-ckks-lattigo": { agent: "oracle", stages: STAGES.heirFloat, real: "about 12 s per check", lines: [
+      ["", "[1/5] agent oracle ...                    # the reference solution"],
+      ["", "[1/5] check ...", { check: null }], ["t-ok", "  stage=done passed=True mae=6.65e-09"], ["", ""],
+      ["t-ok", "PASS.  go build 1.4 s · 0.70 s FHE latency per sample"]] },
+    "heir-bfv-openfhe": { agent: "fhe-loop", stages: STAGES.heirInt, real: "about 45 s per check", lines: [
+      ["", "[1/5] agent fhe-loop ..."], ["t-dim", "  turn 3: write_file heir_model.py          # t = 2^30"],
+      ["", "  turn 3: run_check ...", { check: null }], ["t-bad", "    -> CHECK FAILED at stage: accuracy.     MAE 2.3e-2"],
+      ["t-dim", "  turn 6: write_file heir_model.py          # t = 2^41"],
+      ["", "  turn 6: run_check ...", { check: null }], ["t-bad", "    -> CHECK FAILED at stage: accuracy.     MAE 3.0e-2"],
+      ["t-dim", "  turn 7: write_file heir_model.py          # t = 2^54"],
+      ["", "  turn 7: run_check ...", { check: "verify" }], ["t-bad", "    -> CHECK FAILED at stage: verify.       noise: 40/40 wrong"],
+      ["t-dim", "  turn 8: write_file heir_model.py          # t = 2^47"],
+      ["", "  turn 8: run_check ...", { check: null }], ["t-ok", "    -> CHECK PASSED."], ["t-dim", "  turn 9: finish"],
+      ["", "[1/5] check ..."], ["t-ok", "  stage=done passed=True mae=8.64e-03"], ["", ""],
+      ["t-ok", "PASS.  9 LLM calls · $0.30 · 1.86 s FHE latency per sample"]] },
+    "heir-bgv-openfhe": { agent: "oracle", extra: "--set constraints.max_mae=5e-2", stages: STAGES.heirInt, real: "about 50 s per check", lines: [
+      ["", "[1/5] agent oracle ...                    # the reference solution"],
+      ["", "[1/5] check ...", { check: null }], ["t-ok", "  stage=done passed=True mae=2.28e-02"],
+      ["t-dim", "  (limit 5e-2: BGV on OpenFHE cannot reach 1e-2 on this task)"], ["", ""],
+      ["t-ok", "PASS.  2.80 s FHE latency per sample"]] }
+  };
+  var OPTIONS = {
+    compiler: [["orion", "Orion"], ["concrete", "Concrete ML"], ["heir", "HEIR"]],
+    scheme: [["ckks", "CKKS"], ["tfhe", "TFHE"], ["bfv", "BFV"], ["bgv", "BGV"], ["cggi", "CGGI"]],
+    backend: [["lattigo", "Lattigo"], ["concrete", "Concrete"], ["openfhe", "OpenFHE"], ["tfhe-rs", "tfhe-rs"]]
+  };
+  var DEFAULTS = { orion: ["ckks", "lattigo"], concrete: ["tfhe", "concrete"], heir: ["ckks", "openfhe"] };
+  // Same order as Ancile's own error message.
+  var SUPPORTED = ["orion/ckks/lattigo", "heir/ckks/lattigo", "concrete/tfhe/concrete", "heir/ckks/openfhe", "heir/bgv/openfhe", "heir/bfv/openfhe"];
+  var BLOCKED = {
+    "heir/bgv/lattigo": "heir-opt crashes in GenerateParamBGV on torch-mlir output (HEIR 2026.10.1).",
+    "heir/bfv/lattigo": "heir-opt crashes in GenerateParamBGV on torch-mlir output (HEIR 2026.10.1).",
+    "heir/cggi/tfhe-rs": "the tfhe-rs emitter cannot emit the 64-bit accumulator of an integer matrix product (HEIR 2026.10.1)."
+  };
+  var state = { compiler: "heir", scheme: "bfv", backend: "openfhe" }, changed = null;
+  var cmdEl = document.getElementById("sb-cmd"), noteEl = document.getElementById("sb-note"), runBtn = document.getElementById("sb-run");
+  var sbLog = document.getElementById("sb-log"), stripEl = document.getElementById("sb-stages");
+  var termTitle = document.getElementById("sb-term-title"), speedEl = document.getElementById("sb-speed");
+  var panel = document.getElementById("panel"), codeEl = document.getElementById("code"), codeTitle = document.getElementById("code-title");
+  var play = null;
+
+  function key() { return state.compiler + "/" + state.scheme + "/" + state.backend; }
+  function target() { return T.filter(function (t) { return t.id === key().replace(/\//g, "-"); })[0] || null; }
+  function isDefault() { var d = DEFAULTS[state.compiler]; return d[0] === state.scheme && d[1] === state.backend; }
+  function flagsFor() {
+    // Like the CLI: --compiler alone selects its default target. Other flags only when they differ.
+    var f = [["--compiler", state.compiler]];
+    var d = DEFAULTS[state.compiler];
+    if (state.scheme !== d[0] || SUPPORTED.indexOf(key()) < 0) f.push(["--scheme", state.scheme]);
+    if (state.backend !== d[1] || SUPPORTED.indexOf(key()) < 0) f.push(["--backend", state.backend]);
+    return f;
+  }
+  function commandText() {
+    var r = RUNS[key().replace(/\//g, "-")];
+    var parts = ["ancile run -t tasks/examples/mlp_square --agent " + (r ? r.agent : "fhe-loop")];
+    flagsFor().forEach(function (f) { parts.push(f[0] + " " + f[1]); });
+    if (r && r.extra) parts.push(r.extra);
+    return parts.join(" ");
+  }
+  function renderControls() {
+    Array.prototype.forEach.call(document.querySelectorAll(".seg"), function (seg) {
+      var k = seg.dataset.key;
+      if (!seg.children.length) {
+        OPTIONS[k].forEach(function (o) {
+          var b = document.createElement("button");
+          b.type = "button"; b.dataset.value = o[0]; b.textContent = o[1];
+          if (o[0] === "cggi" || o[0] === "tfhe-rs") b.className = "exp";
+          b.addEventListener("click", function () { choose(k, o[0]); });
+          seg.appendChild(b);
+        });
+      }
+      Array.prototype.forEach.call(seg.children, function (b) { b.setAttribute("aria-pressed", b.dataset.value === state[k] ? "true" : "false"); });
+    });
+  }
+  function renderCommand() {
+    var r = RUNS[key().replace(/\//g, "-")];
+    var html = '<span class="t-dim">ancile run -t tasks/examples/mlp_square --agent ' + (r ? r.agent : "fhe-loop") + "</span>";
+    flagsFor().forEach(function (f) {
+      var name = f[0].slice(2);
+      html += ' <span class="flag' + (changed === name ? " changed" : "") + '">' + f[0] + " " + esc(f[1]) + "</span>";
+    });
+    if (r && r.extra) html += ' <span class="t-dim">' + r.extra + "</span>";
+    cmdEl.innerHTML = html;
+  }
+  function choose(k, v) {
+    if (k === "compiler") {
+      state.compiler = v;
+      // Keep the scheme and backend if they still form a supported target, else use the compiler's default.
+      if (SUPPORTED.indexOf(key()) < 0) { state.scheme = DEFAULTS[v][0]; state.backend = DEFAULTS[v][1]; }
+    } else {
+      state[k] = v;
+    }
+    changed = k;
+    update(true);
+  }
+  function stageStrip(stages, upto, failAt) {
+    stripEl.innerHTML = stages.map(function (st, i) {
+      var cls = "";
+      if (failAt != null && i === failAt) cls = "bad";
+      else if (upto != null && i < upto) cls = "ok";
+      else if (upto != null && i === upto) cls = "on";
+      return '<span class="' + cls + '">' + st + "</span>";
+    }).join("");
+  }
+  function lineHTMLs(lines) { return lines.map(function (l) { return lineHTML(l); }).join("\n"); }
+  function stop() { if (play) { clearTimeout(play); play = null; } runBtn.disabled = false; }
+
+  function renderError(msg, extra) {
+    stop();
+    stripEl.innerHTML = "";
+    termTitle.textContent = "ancile run";
+    speedEl.textContent = "exit code 2";
+    sbLog.innerHTML = lineHTML(["t-bad", msg]) + (extra ? "\n\n" + lineHTML(["t-dim", extra]) : "");
+    runBtn.disabled = true;
+  }
+  function update(animate) {
+    renderControls();
+    renderCommand();
+    var k = key(), t = target();
+    if (SUPPORTED.indexOf(k) < 0) {
+      var flags = flagsFor().map(function (f) { return f[0] + " " + f[1]; }).join(" ");
+      var msg = "Config error: no supported target matches " + flags + ". Supported targets (compiler/scheme/backend/hardware): " +
+        SUPPORTED.map(function (x) { return x + "/cpu"; }).join(", ");
+      renderError(msg, BLOCKED[k] ? "Tested: this target is blocked because " + BLOCKED[k] : null);
+      var sugg = SUPPORTED.filter(function (x) { return x.split("/")[0] === state.compiler; });
+      noteEl.innerHTML = "<b>Not a supported combination.</b> Ancile stops before any work starts, with the list of valid targets.";
+      panel.innerHTML = '<div><h3 class="err">No run</h3><p class="sub">The CLI rejects this combination. Pick a valid target for ' + esc(state.compiler) + ':</p></div>' +
+        '<div class="suggest">' + sugg.map(function (x) { return '<button type="button" data-t="' + x + '">' + x.replace(/\//g, " / ") + "</button>"; }).join("") + "</div>";
+      Array.prototype.forEach.call(panel.querySelectorAll(".suggest button"), function (b) {
+        b.addEventListener("click", function () { var p = b.dataset.t.split("/"); state.compiler = p[0]; state.scheme = p[1]; state.backend = p[2]; changed = "scheme"; update(true); });
+      });
+      codeTitle.textContent = ""; codeEl.innerHTML = '<span class="t-dim"># No solution file: the run does not start.</span>';
+      return;
+    }
+    var r = RUNS[t.id];
+    noteEl.innerHTML = changed ? "<b>Same task, same test inputs.</b> Only the " + changed + " flag changed." : "<b>Same task, same test inputs.</b> Change one control to switch the target.";
+    termTitle.textContent = commandText().replace("ancile run -t tasks/examples/mlp_square ", "ancile run … ");
+    speedEl.textContent = "replay, sped up · real: " + r.real;
+    var pass = t.mae <= 1e-2;
+    panel.innerHTML =
+      '<div><h3>' + t.compiler + ' · ' + t.scheme + ' · ' + t.backend + '</h3><p class="sub">' + t.what + '</p></div>' +
+      '<dl class="kv"><div><dt>MAE</dt><dd>' + fmt(t.mae) + '</dd></div><div><dt>Top-1</dt><dd>' + t.top1 + '</dd></div><div><dt>Latency</dt><dd>' + t.lat.toFixed(1) + ' s</dd></div></dl>' +
+      '<div class="params">' + t.params.map(function (p) { return '<span class="param">' + esc(p) + '</span>'; }).join("") + '</div>' +
+      '<div class="verdict ' + (pass ? "ok" : "warn") + '"><b>' + (pass ? "Within the 1e-2 limit." : "Above the 1e-2 limit.") + '</b> Reference solution. Agent: ' + esc(t.agent) + '.</div>';
+    codeTitle.textContent = t.file;
+    codeEl.innerHTML = t.code;
+    try { history.replaceState(null, "", "#" + t.id); } catch (e) {}
+    if (animate && !reduce) run(); else finish();
+  }
+  function finish() {
+    stop();
+    var r = RUNS[target().id];
+    sbLog.innerHTML = lineHTMLs(r.lines);
+    stageStrip(r.stages, r.stages.length, null);
+  }
+  function run() {
+    stop();
+    var r = RUNS[target().id], i = 0, shown = [];
+    runBtn.disabled = true;
+    stageStrip(r.stages, null, null);
+    function step() {
+      if (i >= r.lines.length) { sbLog.innerHTML = lineHTMLs(shown); stageStrip(r.stages, r.stages.length, null); runBtn.disabled = false; play = null; return; }
+      var l = r.lines[i++];
+      shown.push(l);
+      sbLog.innerHTML = lineHTMLs(shown) + '\n<span class="caret"></span>';
+      if (l[2] && "check" in l[2]) {
+        // Sweep the stages; stop at the failed one.
+        var failAt = l[2].check ? r.stages.indexOf(l[2].check) : -1;
+        var last = failAt >= 0 ? failAt : r.stages.length;
+        var s = 0;
+        (function sweep() {
+          if (s < last) { stageStrip(r.stages, s, null); s++; play = setTimeout(sweep, 170); return; }
+          stageStrip(r.stages, last, failAt >= 0 ? failAt : null);
+          play = setTimeout(step, 260);
+        })();
+        return;
+      }
+      play = setTimeout(step, l[1] === "" ? 120 : 230);
+    }
+    step();
+  }
+  runBtn.addEventListener("click", function () { if (target()) run(); });
+  document.getElementById("sb-copy").addEventListener("click", function (ev) {
+    var b = ev.currentTarget, text = commandText();
+    var done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1400); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { selectText(cmdEl); });
+    else selectText(cmdEl);
+  });
+
+  var startId = (location.hash || "").slice(1);
+  var startT = T.filter(function (t) { return t.id === startId; })[0];
+  if (startT) { var p0 = startT.id.split("-"); state = { compiler: p0[0], scheme: p0[1], backend: p0[2] }; }
+  update(false); // complete at rest: the final state of the run is visible before any click
+
+  function selectText(el) { var r = document.createRange(); r.selectNodeContents(el); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+
+  // Results table and charts, from the same data.
+  var body = document.getElementById("results-body");
+  body.innerHTML = T.map(function (t) {
+    var pass = t.mae <= 1e-2;
+    return '<tr><td><span class="tg">' + t.id.replace(/-/g, " / ") + '</span></td><td class="num">' + fmt(t.mae) + '</td><td class="num">' + t.top1 + '</td><td class="num">' + t.lat.toFixed(1) + ' s</td><td>' + esc(t.params.slice(0, 2).join(", ")) + '</td><td><span class="pill ' + (pass ? "ok" : "bad") + '">' + (pass ? "pass" : "above 1e-2") + '</span></td></tr>';
+  }).join("");
+
+  var NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, text) { var n = document.createElementNS(NS, tag); for (var k in attrs) n.setAttribute(k, attrs[k]); if (text != null) n.textContent = text; return n; }
+
+  // MAE: log10 scale from 1e-10 to 1e-1.
+  (function () {
+    var W = 560, rowH = 34, top = 14, left = 170, right = 24, H = top + T.length * rowH + 34;
+    var lo = -10, hi = -1, x = function (v) { return left + (Math.log10(v) - lo) / (hi - lo) * (W - left - right); };
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Mean absolute error for each target on a log scale" });
+    [-10, -8, -6, -4, -2].forEach(function (e) {
+      svg.appendChild(el("line", { x1: x(Math.pow(10, e)), x2: x(Math.pow(10, e)), y1: top - 4, y2: H - 28, "class": "grid" }));
+      svg.appendChild(el("text", { x: x(Math.pow(10, e)), y: H - 12, "text-anchor": "middle" }, "1e" + e));
+    });
+    var lx = x(1e-2);
+    svg.appendChild(el("line", { x1: lx, x2: lx, y1: top - 4, y2: H - 28, "class": "limit" }));
+    svg.appendChild(el("text", { x: lx + 4, y: top + 4, "class": "limit-t" }, "limit"));
+    T.forEach(function (t, i) {
+      var y = top + i * rowH + rowH / 2;
+      svg.appendChild(el("text", { x: left - 12, y: y + 4, "text-anchor": "end", "class": "lbl" }, t.id.replace(/-/g, " / ")));
+      svg.appendChild(el("line", { x1: x(1e-10), x2: x(t.mae), y1: y, y2: y, "class": "grid" }));
+      svg.appendChild(el("circle", { cx: x(t.mae), cy: y, r: 6, "class": "mark" + (t.mae > 1e-2 ? " fail" : "") }));
+    });
+    document.getElementById("chart-mae").appendChild(svg);
+  })();
+
+  // Latency: linear scale from 0 to 12 s.
+  (function () {
+    var W = 560, rowH = 34, top = 14, left = 170, right = 48, H = top + T.length * rowH + 34, max = 12;
+    var x = function (v) { return left + v / max * (W - left - right); };
+    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "FHE latency in seconds for each target" });
+    [0, 3, 6, 9, 12].forEach(function (v) {
+      svg.appendChild(el("line", { x1: x(v), x2: x(v), y1: top - 4, y2: H - 28, "class": "grid" }));
+      svg.appendChild(el("text", { x: x(v), y: H - 12, "text-anchor": "middle" }, v + " s"));
+    });
+    T.forEach(function (t, i) {
+      var y = top + i * rowH + rowH / 2;
+      svg.appendChild(el("text", { x: left - 12, y: y + 4, "text-anchor": "end", "class": "lbl" }, t.id.replace(/-/g, " / ")));
+      svg.appendChild(el("rect", { x: x(0), y: y - 8, width: Math.max(2, x(t.lat) - x(0)), height: 16, rx: 3, "class": "bar" }));
+      svg.appendChild(el("text", { x: x(t.lat) + 6, y: y + 4, "class": "val" }, t.lat.toFixed(1)));
+    });
+    document.getElementById("chart-lat").appendChild(svg);
+  })();
+})();
+</script>
+</body>
+</html>
